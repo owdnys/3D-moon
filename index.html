@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#03050a">
+<meta name="description" content="可交互的 3D 月球：NASA LROC 彩色影像 + LOLA 高程数据，拖动旋转、滚轮缩放、调节太阳方位观察月相。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23dfe6f0'/%3E%3Ccircle cx='22' cy='24' r='6' fill='%23b9c4d6'/%3E%3Ccircle cx='43' cy='39' r='8' fill='%23b9c4d6'/%3E%3Ccircle cx='27' cy='46' r='4' fill='%23b9c4d6'/%3E%3Ccircle cx='45' cy='18' r='3' fill='%23b9c4d6'/%3E%3C/svg%3E">
+<title>月球 · THE MOON</title>
+<style>
+  :root{
+    --fg:#eaf2ff;
+    --dim:#8fa5c9;
+    --dim2:#63769a;
+    --accent:#8ec5ff;
+    --line:rgba(140,180,255,.14);
+    --panel:rgba(9,14,27,.66);
+    --panel-line:rgba(150,190,255,.12);
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    height:100%;margin:0;overflow:hidden;
+    background:#03050a;
+    color:var(--fg);
+    font-family:"Segoe UI","Microsoft YaHei","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    user-select:none;
+    cursor:default;
+  }
+  body::before{
+    content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:
+      radial-gradient(1150px 800px at 50% 34%, #111f3d 0%, rgba(8,12,24,.0) 64%),
+      radial-gradient(900px 640px at 82% 88%, #0b1526 0%, rgba(3,5,10,0) 58%),
+      radial-gradient(700px 500px at 12% 78%, #0b1224 0%, rgba(3,5,10,0) 60%),
+      #03050a;
+  }
+  #stage{position:fixed;inset:0;z-index:1;}
+  #scene{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none;}
+  #scene.dragging{cursor:grabbing;}
+  #glow{
+    position:absolute;left:50%;top:50%;border-radius:50%;
+    transform:translate(-50%,-50%);
+    pointer-events:none;z-index:2;
+    background:radial-gradient(circle,
+      rgba(198,222,255,.17) 0%,
+      rgba(160,198,255,.09) 38%,
+      rgba(120,165,255,.03) 58%,
+      rgba(100,140,255,0) 72%);
+    mix-blend-mode:screen;
+    will-change:width,height;
+  }
+  #vignette{
+    position:absolute;inset:0;pointer-events:none;z-index:2;
+    background:radial-gradient(circle at 50% 48%, rgba(0,0,0,0) 40%, rgba(0,0,0,.28) 72%, rgba(0,0,0,.62) 100%);
+    mix-blend-mode:multiply;
+  }
+  #labels{position:absolute;inset:0;z-index:3;pointer-events:none;overflow:hidden;}
+
+  /* ---------- HUD ---------- */
+  .hud{position:fixed;z-index:10;pointer-events:none;}
+  .hud *{pointer-events:auto;}
+
+  .hud-head{top:34px;left:40px;}
+  .kicker{
+    display:flex;align-items:center;gap:10px;
+    font-size:10.5px;letter-spacing:.28em;color:var(--dim2);
+    text-transform:uppercase;margin-bottom:14px;
+  }
+  .kicker i{display:block;width:34px;height:1px;background:linear-gradient(90deg,rgba(142,197,255,.75),rgba(142,197,255,0));}
+  .hud-head h1{
+    margin:0;font-size:clamp(38px,5.2vw,64px);font-weight:600;
+    letter-spacing:.18em;line-height:1;
+    background:linear-gradient(180deg,#ffffff 0%,#c7d9f7 62%,#8fa8cf 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    text-shadow:0 0 44px rgba(140,190,255,.14);
+  }
+  .hud-head .sub{
+    margin-top:16px;font-size:11.5px;letter-spacing:.14em;color:var(--dim);
+    display:flex;align-items:center;gap:10px;
+  }
+  .hud-head .sub b{font-weight:600;letter-spacing:.26em;color:#cfe0fa;font-size:11px;}
+  .hud-head .sub s{color:var(--dim2);text-decoration:none;opacity:.55;}
+
+  /* 数据卡 */
+  .hud-facts{
+    left:40px;bottom:42px;
+    display:grid;grid-template-columns:auto auto;gap:14px 34px;
+    padding:18px 22px;border-radius:14px;
+    background:var(--panel);
+    border:1px solid var(--panel-line);
+    backdrop-filter:blur(14px) saturate(120%);
+    -webkit-backdrop-filter:blur(14px) saturate(120%);
+  }
+  .fact{display:flex;flex-direction:column;gap:5px;}
+  .fact span{font-size:10.5px;letter-spacing:.18em;color:var(--dim2);}
+  .fact b{font-size:15px;font-weight:600;letter-spacing:.06em;color:#dfeaff;font-variant-numeric:tabular-nums;}
+  .fact b i{font-style:normal;font-size:10.5px;color:var(--dim);letter-spacing:.08em;margin-left:2px;}
+
+  /* 控制面板 */
+  .hud-panel{
+    top:34px;right:40px;width:238px;
+    padding:18px 18px 16px;border-radius:16px;
+    background:var(--panel);
+    border:1px solid var(--panel-line);
+    backdrop-filter:blur(16px) saturate(120%);
+    -webkit-backdrop-filter:blur(16px) saturate(120%);
+    box-shadow:0 20px 60px rgba(0,0,0,.4);
+  }
+  .panel-title{
+    display:flex;align-items:center;justify-content:space-between;
+    font-size:10.5px;letter-spacing:.22em;color:var(--dim2);
+    margin-bottom:14px;
+  }
+  .panel-title em{font-style:normal;color:var(--dim2);opacity:.6;letter-spacing:.1em;font-size:10px;}
+
+  .toggle{
+    width:100%;display:flex;align-items:center;justify-content:space-between;
+    background:none;border:0;color:var(--fg);font:inherit;
+    font-size:12.5px;letter-spacing:.05em;padding:7px 0;cursor:pointer;
+  }
+  .toggle .lab{display:flex;align-items:center;gap:9px;color:#c9d9f2;}
+  .switch{
+    position:relative;width:34px;height:18px;border-radius:20px;flex:0 0 auto;
+    background:rgba(140,170,220,.16);
+    border:1px solid rgba(150,185,240,.18);
+    transition:background .25s ease,border-color .25s ease;
+  }
+  .switch::after{
+    content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;
+    background:#7d90b0;transition:transform .25s cubic-bezier(.4,1.4,.5,1),background .25s ease;
+  }
+  .toggle.on .switch{background:rgba(120,180,255,.28);border-color:rgba(150,200,255,.42);}
+  .toggle.on .switch::after{transform:translateX(16px);background:#bfe0ff;box-shadow:0 0 10px rgba(150,205,255,.75);}
+
+  .divider{height:1px;background:linear-gradient(90deg,var(--line),rgba(140,180,255,0));margin:14px 0 13px;}
+
+  .slider-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:11px;}
+  .slider-head span{font-size:12.5px;color:#c9d9f2;letter-spacing:.05em;}
+  .slider-head b{font-size:12px;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:.04em;}
+
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:18px;
+    background:transparent;cursor:pointer;margin:0;
+  }
+  input[type=range]::-webkit-slider-runnable-track{
+    height:3px;border-radius:3px;
+    background:linear-gradient(90deg,rgba(142,197,255,.75),rgba(142,197,255,.12));
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:13px;height:13px;margin-top:-5px;border-radius:50%;
+    background:#e6f2ff;border:1px solid rgba(255,255,255,.7);
+    box-shadow:0 0 12px rgba(140,200,255,.85);transition:transform .15s ease;
+  }
+  input[type=range]:active::-webkit-slider-thumb{transform:scale(1.14);}
+  input[type=range]::-moz-range-track{height:3px;border-radius:3px;background:rgba(142,197,255,.4);}
+  input[type=range]::-moz-range-thumb{width:12px;height:12px;border:0;border-radius:50%;background:#e6f2ff;}
+
+  .range-hint{
+    display:flex;justify-content:space-between;margin-top:7px;
+    font-size:10px;letter-spacing:.12em;color:var(--dim2);
+  }
+
+  .btn-row{display:flex;gap:9px;margin-top:2px;}
+  .btn{
+    flex:1;padding:8px 6px;border-radius:9px;cursor:pointer;
+    background:rgba(140,180,255,.07);
+    border:1px solid rgba(150,190,255,.16);
+    color:#cfe0fa;font:inherit;font-size:11.5px;letter-spacing:.06em;
+    display:flex;align-items:center;justify-content:center;gap:6px;
+    transition:background .2s ease,border-color .2s ease,transform .12s ease;
+  }
+  .btn:hover{background:rgba(140,180,255,.14);border-color:rgba(160,200,255,.3);}
+  .btn:active{transform:scale(.97);}
+  .btn svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;opacity:.9;}
+
+  .hint{
+    position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:10;
+    font-size:10.5px;letter-spacing:.16em;color:var(--dim2);white-space:nowrap;
+    display:flex;align-items:center;gap:10px;pointer-events:none;
+  }
+  .hint kbd{
+    font:inherit;color:#a9c4e8;padding:2px 7px;border-radius:5px;
+    background:rgba(140,180,255,.07);border:1px solid rgba(150,190,255,.12);
+  }
+  .hint .dot{opacity:.35;}
+
+  .credit{
+    position:fixed;right:40px;bottom:30px;z-index:10;
+    font-size:9.5px;letter-spacing:.14em;color:var(--dim2);opacity:.5;
+    text-align:right;line-height:1.7;pointer-events:none;
+  }
+
+  /* ---------- 月球标注 ---------- */
+  .poi{position:absolute;top:0;left:0;width:0;height:0;will-change:transform,opacity;opacity:0;}
+  .poi-dot{
+    position:absolute;left:-3.5px;top:-3.5px;width:7px;height:7px;border-radius:50%;
+    background:#ffedb4;box-shadow:0 0 9px rgba(255,220,140,.95),0 0 22px rgba(255,190,80,.55);
+  }
+  .poi-dot::before{
+    content:"";position:absolute;left:50%;top:50%;width:22px;height:22px;border-radius:50%;
+    transform:translate(-50%,-50%);
+    border:1px solid rgba(255,225,160,.35);
+    animation:pulse 3.2s ease-out infinite;
+  }
+  @keyframes pulse{
+    0%{transform:translate(-50%,-50%) scale(.35);opacity:.9;}
+    70%{transform:translate(-50%,-50%) scale(1.5);opacity:0;}
+    100%{opacity:0;}
+  }
+  .poi-name{
+    position:absolute;left:13px;top:-11px;white-space:nowrap;
+    font-size:11.5px;letter-spacing:.08em;color:#f7faff;
+    text-shadow:0 1px 4px #000,0 0 10px rgba(0,0,0,.95),0 0 22px rgba(0,0,0,.7);
+    display:flex;flex-direction:column;gap:2px;
+  }
+  .poi-name b{font-weight:600;letter-spacing:.1em;}
+  .poi-name em{font-style:normal;font-size:9.5px;letter-spacing:.08em;color:#c3d5ee;opacity:.92;}
+  .poi-name.left{left:auto;right:13px;text-align:right;align-items:flex-end;}
+
+  /* ---------- 加载 ---------- */
+  #loader{
+    position:fixed;inset:0;z-index:100;
+    display:flex;align-items:center;justify-content:center;
+    background:#03050a;
+    transition:opacity 1s ease,visibility 1s ease;
+  }
+  #loader.done{opacity:0;visibility:hidden;}
+  .loader-box{display:flex;flex-direction:column;align-items:center;gap:22px;}
+  .loader-ring{
+    width:56px;height:56px;border-radius:50%;
+    border:1px solid rgba(140,180,255,.14);
+    border-top-color:rgba(160,205,255,.9);
+    animation:spin 1.1s linear infinite;
+    box-shadow:0 0 30px rgba(120,170,255,.15) inset;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .loader-text{
+    font-size:10.5px;letter-spacing:.3em;color:#7f95b8;
+    text-indent:.3em;
+  }
+  .loader-line{width:170px;height:1px;background:rgba(140,180,255,.12);overflow:hidden;}
+  .loader-line i{display:block;height:100%;width:0;background:linear-gradient(90deg,rgba(142,197,255,0),#8ec5ff);transition:width .35s ease;}
+
+  /* ---------- 响应式 ---------- */
+  @media (max-width: 980px){
+    .hud-head{top:26px;left:24px;}
+    .hud-panel{top:24px;right:24px;width:216px;padding:15px;}
+    .hud-facts{left:24px;bottom:34px;gap:12px 24px;padding:14px 18px;}
+    .fact b{font-size:13.5px;}
+    .credit{right:24px;bottom:24px;}
+  }
+  @media (max-width: 720px){
+    .hud-head{top:20px;left:18px;}
+    .hud-head .sub{font-size:10px;margin-top:10px;}
+    .kicker{margin-bottom:10px;font-size:9px;}
+    .hud-facts{display:none;}
+    .hud-panel{
+      top:auto;bottom:calc(env(safe-area-inset-bottom,0px) + 48px);
+      left:16px;right:16px;width:auto;max-width:none;transform:none;
+      padding:12px 14px;border-radius:14px;
+    }
+    .panel-title{margin-bottom:8px;}
+    .toggle{padding:5px 0;font-size:12px;}
+    .divider{margin:10px 0;}
+    .btn{padding:7px 6px;}
+    .hint{bottom:16px;font-size:9.5px;letter-spacing:.1em;gap:7px;}
+    .credit{display:none;}
+    .poi-name{font-size:10.5px;}
+    .poi-name em{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="scene"></canvas>
+  <div id="glow"></div>
+  <div id="vignette"></div>
+  <div id="labels"></div>
+</div>
+
+<header class="hud hud-head">
+  <div class="kicker"><i></i>Solar System · Satellite 03</div>
+  <h1>月球</h1>
+  <div class="sub"><b>THE MOON</b><s>/</s>地球唯一的天然卫星</div>
+</header>
+
+<section class="hud hud-facts">
+  <div class="fact"><span>直 径</span><b>3,474.8 <i>km</i></b></div>
+  <div class="fact"><span>平均距地</span><b>384,400 <i>km</i></b></div>
+  <div class="fact"><span>表面重力</span><b>1.62 <i>m/s²</i></b></div>
+  <div class="fact"><span>公转周期</span><b>27.32 <i>天</i></b></div>
+</section>
+
+<aside class="hud hud-panel">
+  <div class="panel-title"><span>视图控制</span><em>CONTROLS</em></div>
+
+  <button class="toggle on" id="btnSpin">
+    <span class="lab">自动自转</span><span class="switch"></span>
+  </button>
+  <button class="toggle on" id="btnLabels">
+    <span class="lab">月面标注</span><span class="switch"></span>
+  </button>
+  <button class="toggle on" id="btnStars">
+    <span class="lab">星空</span><span class="switch"></span>
+  </button>
+
+  <div class="divider"></div>
+
+  <div class="slider-head"><span>太阳方位</span><b id="sunValue">33°</b></div>
+  <input id="sunRange" type="range" min="0" max="360" value="33" step="1" aria-label="太阳方位">
+  <div class="range-hint"><span>满月</span><span>新月</span></div>
+
+  <div class="divider"></div>
+
+  <div class="btn-row">
+    <button class="btn" id="btnReset">
+      <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>重置视角
+    </button>
+    <button class="btn" id="btnFull">
+      <svg viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M16 21h5v-5M8 21H3v-5"/></svg><span id="fullLabel">全屏</span>
+    </button>
+  </div>
+</aside>
+
+<div class="hint">
+  <kbd>拖动</kbd> 旋转 <span class="dot">·</span> <kbd>滚轮</kbd> 缩放 <span class="dot">·</span> <kbd>双击</kbd> 复位
+</div>
+
+<div class="credit">
+  影像 LROC WAC · 高程 LOLA<br>NASA / Goddard SVS
+</div>
+
+<div id="loader">
+  <div class="loader-box">
+    <div class="loader-ring"></div>
+    <div class="loader-text">正在装配月面</div>
+    <div class="loader-line"><i id="loadBar"></i></div>
+  </div>
+</div>
+
+<script src="three.min.js"></script>
+<script src="moon-assets.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ============================ 配置 ============================ */
+  var CFG = {
+    camDefault: 3.35,
+    camStart: 4.9,
+    camMin: 2.15,
+    camMax: 8.6,
+    autoSpin: 0.072,       // rad/s
+    dragSens: 0.0048,      // rad/px
+    pitchMax: 1.12,
+    startSpin: -Math.PI / 2,
+    sunAzimuth: 33,        // 度
+    sunElevation: 10,      // 度
+    lat0Pitch: 0.14
+  };
+
+  // 竖屏时拉远并上移，避免月球被裁切/被控制面板遮挡
+  if (window.innerWidth / window.innerHeight < 0.85) {
+    CFG.camDefault = 5.6;
+    CFG.camStart = 6.9;
+    CFG.camMin = 3.4;
+    CFG.camMax = 14;
+  }
+
+  /* ============================ 状态 ============================ */
+  var S = {
+    autoSpin: true,
+    labels: true,
+    stars: true,
+    spin: CFG.startSpin,
+    targetSpin: CFG.startSpin,
+    pitch: CFG.lat0Pitch,
+    targetPitch: CFG.lat0Pitch,
+    dist: CFG.camStart,
+    targetDist: CFG.camDefault,
+    spinVel: 0,
+    pitchVel: 0,
+    time: 0,
+    ready: false
+  };
+
+  /* ============================ 渲染器 ============================ */
+  var canvas = document.getElementById('scene');
+  if (!window.THREE) { return fail('three.js 未能加载'); }
+  if (!window.MOON_ASSETS) { return fail('月面贴图数据缺失'); }
+
+  // 兼顾高分屏清晰度与集显性能：限制总渲染像素
+  function targetPixelRatio() {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = window.innerWidth, h = window.innerHeight;
+    var fit = Math.sqrt(7.5e6 / Math.max(1, w * h));
+    return Math.max(1, Math.min(dpr, fit));
+  }
+
+  var renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+  } catch (e) {
+    return fail('当前浏览器无法启动 WebGL');
+  }
+  renderer.setPixelRatio(targetPixelRatio());
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  renderer.setClearColor(0x000000, 0);
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.NoToneMapping;
+
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 3000);
+  camera.position.set(0, 0, S.dist);
+  camera.lookAt(0, 0, 0);
+
+  var tiltGroup = new THREE.Group();      // 俯仰
+  var spinGroup = new THREE.Group();      // 自转
+  tiltGroup.add(spinGroup);
+  scene.add(tiltGroup);
+  if (window.innerWidth / window.innerHeight < 0.85) tiltGroup.position.y = 0.44;
+
+  /* ============================ 灯光 ============================ */
+  var sunLight = new THREE.DirectionalLight(0xfffdf8, 1.12);
+  sunLight.position.set(0, 0, 10);
+  scene.add(sunLight);
+
+  // 地照：让暗面保留一点冷色轮廓，接近真实的"地球反照"
+  var earthShine = new THREE.DirectionalLight(0x5f86e8, 0.22);
+  earthShine.position.set(-1.6, 1.1, -7);
+  scene.add(earthShine);
+
+  var ambient = new THREE.AmbientLight(0x1e2a40, 0.09);
+  scene.add(ambient);
+
+  var sunAz = CFG.sunAzimuth, sunEl = CFG.sunElevation;
+  function updateSun() {
+    var az = THREE.MathUtils.degToRad(sunAz);
+    var el = THREE.MathUtils.degToRad(sunEl);
+    sunLight.position.set(
+      Math.cos(el) * Math.sin(az) * 10,
+      Math.sin(el) * 10,
+      Math.cos(el) * Math.cos(az) * 10
+    );
+    earthShine.position.copy(sunLight.position).multiplyScalar(-0.75);
+    earthShine.position.y = Math.abs(earthShine.position.y) * 0.6 + 1.2;
+  }
+  updateSun();
+
+  /* ============================ 星空 ============================ */
+  var starMat = null, stars = null, galaxy = null;
+
+  function makeStarGeometry(count, opts) {
+    var pos = new Float32Array(count * 3);
+    var col = new Float32Array(count * 3);
+    var size = new Float32Array(count);
+    var phase = new Float32Array(count);
+    var q = new THREE.Quaternion().setFromEuler(new THREE.Euler(1.02, 0.5, 0.2));
+    var v = new THREE.Vector3();
+
+    for (var i = 0; i < count; i++) {
+      if (opts.band) {
+        // 银河带：在一条大圆附近聚集
+        var a = Math.random() * Math.PI * 2;
+        var g = (Math.random() + Math.random() + Math.random() - 1.5) * 0.24;
+        v.set(Math.cos(a), g, Math.sin(a)).normalize().applyQuaternion(q);
+      } else {
+        var u = Math.random() * 2 - 1;
+        var th = Math.random() * Math.PI * 2;
+        var s = Math.sqrt(1 - u * u);
+        v.set(s * Math.cos(th), u, s * Math.sin(th));
+      }
+      var r = opts.rMin + Math.random() * (opts.rMax - opts.rMin);
+      pos[i * 3] = v.x * r;
+      pos[i * 3 + 1] = v.y * r;
+      pos[i * 3 + 2] = v.z * r;
+
+      // 色温
+      var t = Math.random();
+      var cr, cg, cb;
+      if (t < 0.14) { cr = 1.0; cg = 0.86; cb = 0.70; }        // 暖
+      else if (t < 0.34) { cr = 0.76; cg = 0.86; cb = 1.0; }   // 冷
+      else { cr = 1.0; cg = 0.98; cb = 0.95; }
+      var lum = opts.lum * (0.45 + Math.random() * 0.75);
+      col[i * 3] = cr * lum;
+      col[i * 3 + 1] = cg * lum;
+      col[i * 3 + 2] = cb * lum;
+
+      size[i] = opts.size * (0.45 + Math.pow(Math.random(), 2.6) * 1.9);
+      phase[i] = Math.random() * Math.PI * 2;
+    }
+
+    var g2 = new THREE.BufferGeometry();
+    g2.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g2.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
+    g2.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+    g2.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
+    return g2;
+  }
+
+  function makeStarMaterial() {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uPixelRatio: { value: targetPixelRatio() }
+      },
+      vertexShader: [
+        'attribute float aSize;',
+        'attribute float aPhase;',
+        'attribute vec3 aColor;',
+        'uniform float uTime;',
+        'uniform float uPixelRatio;',
+        'varying vec3 vColor;',
+        'varying float vTwinkle;',
+        'void main(){',
+        '  vColor = aColor;',
+        '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+        '  gl_PointSize = aSize * uPixelRatio * (300.0 / max(1.0, -mv.z));',
+        '  gl_Position = projectionMatrix * mv;',
+        '  vTwinkle = 0.72 + 0.28 * sin(uTime * 0.9 + aPhase);',
+        '}'
+      ].join('\n'),
+      fragmentShader: [
+        'varying vec3 vColor;',
+        'varying float vTwinkle;',
+        'void main(){',
+        '  vec2 d = gl_PointCoord - 0.5;',
+        '  float r = length(d);',
+        '  float a = smoothstep(0.5, 0.02, r);',
+        '  a = pow(a, 1.8);',
+        '  gl_FragColor = vec4(vColor * vTwinkle, a);',
+        '}'
+      ].join('\n'),
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      blending: THREE.AdditiveBlending
+    });
+  }
+
+  (function buildStars() {
+    starMat = makeStarMaterial();
+    stars = new THREE.Points(makeStarGeometry(4200, {
+      rMin: 70, rMax: 240, lum: 1.15, size: 1.12
+    }), starMat);
+    stars.frustumCulled = false;
+    scene.add(stars);
+
+    galaxy = new THREE.Points(makeStarGeometry(6000, {
+      band: true, rMin: 90, rMax: 260, lum: 0.68, size: 0.86
+    }), starMat);
+    galaxy.frustumCulled = false;
+    scene.add(galaxy);
+  })();
+
+  /* ============================ 月球 ============================ */
+  var moon = null;
+  var angle = 0;
+
+  function loadTexture(url, srgb) {
+    return new Promise(function (resolve, reject) {
+      new THREE.TextureLoader().load(url, function (tex) {
+        if (srgb) tex.encoding = THREE.sRGBEncoding;
+        tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.generateMipmaps = true;
+        resolve(tex);
+      }, undefined, reject);
+    });
+  }
+
+  var loadBar = document.getElementById('loadBar');
+
+  // 提升月面反差：NASA 原图偏"平淡白"，做 gamma + 对比度映射后更接近肉眼/照片观感
+  function enhanceTexture(tex, opt) {
+    var img = tex.image;
+    if (!img || !img.width) return tex;
+    var c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    var ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    var data;
+    try {
+      data = ctx.getImageData(0, 0, c.width, c.height);
+    } catch (e) {
+      return tex; // 理论上 data URL 不会污染画布
+    }
+    var lut = new Uint8Array(256);
+    var k = opt.contrast, g = opt.gamma, br = opt.brightness;
+    for (var i = 0; i < 256; i++) {
+      var v = Math.pow(i / 255, g) * br;
+      v = (v - 0.5) * k + 0.5;
+      lut[i] = v <= 0 ? 0 : (v >= 1 ? 255 : Math.round(v * 255));
+    }
+    var d = data.data;
+    var sat = opt.saturate == null ? 1 : opt.saturate;
+    var tint = opt.tint || [1, 1, 1];
+    for (var j = 0; j < d.length; j += 4) {
+      var r = lut[d[j]], g2 = lut[d[j + 1]], b = lut[d[j + 2]];
+      var l = 0.299 * r + 0.587 * g2 + 0.114 * b;
+      r = (l + (r - l) * sat) * tint[0];
+      g2 = (l + (g2 - l) * sat) * tint[1];
+      b = (l + (b - l) * sat) * tint[2];
+      d[j] = r < 0 ? 0 : (r > 255 ? 255 : r);
+      d[j + 1] = g2 < 0 ? 0 : (g2 > 255 ? 255 : g2);
+      d[j + 2] = b < 0 ? 0 : (b > 255 ? 255 : b);
+    }
+    ctx.putImageData(data, 0, 0);
+
+    var nt = new THREE.CanvasTexture(c);
+    nt.encoding = THREE.sRGBEncoding;
+    nt.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    nt.minFilter = THREE.LinearMipmapLinearFilter;
+    nt.generateMipmaps = true;
+    return nt;
+  }
+
+  Promise.all([
+    loadTexture(window.MOON_ASSETS.color, true),
+    loadTexture(window.MOON_ASSETS.dem, false)
+  ]).then(function (texs) {
+    var colorTex = enhanceTexture(texs[0], {
+      contrast: 1.16, gamma: 1.0, brightness: 0.92,
+      saturate: 0.80, tint: [0.995, 1.0, 1.035]
+    });
+    var demTex = texs[1];
+
+    var geo = new THREE.SphereGeometry(1, 200, 100);
+    var mat = new THREE.MeshStandardMaterial({
+      map: colorTex,
+      bumpMap: demTex,
+      bumpScale: 0.068,
+      displacementMap: demTex,
+      displacementScale: 0.012,
+      displacementBias: -0.006,
+      roughness: 0.94,
+      metalness: 0.0
+    });
+
+    moon = new THREE.Mesh(geo, mat);
+    spinGroup.add(moon);
+
+    S.ready = true;
+    buildLabels();
+    startIntro();
+  }).catch(function (err) {
+    fail('月面贴图解析失败');
+    console.error(err);
+  });
+
+  function startIntro() {
+    loadBar.style.width = '100%';
+    var loader = document.getElementById('loader');
+    var t0 = performance.now();
+    // 相机推进 + 遮罩淡出
+    var iv = setInterval(function () {
+      if (performance.now() - t0 > 420) {
+        clearInterval(iv);
+        loader.classList.add('done');
+        setTimeout(function () { loader.style.display = 'none'; }, 1200);
+      }
+    }, 60);
+    clock.start();
+    tick();
+  }
+
+  /* ============================ 标注 ============================ */
+  var POIS = [
+    { name: '静海', en: 'Mare Tranquillitatis', lat: 8.5, lon: 31.4 },
+    { name: '雨海', en: 'Mare Imbrium', lat: 32.8, lon: -15.9 },
+    { name: '风暴洋', en: 'Oceanus Procellarum', lat: 18.4, lon: -57.4 },
+    { name: '危海', en: 'Mare Crisium', lat: 17.0, lon: 59.1, side: 'left' },
+    { name: '第谷环形山', en: 'Tycho', lat: -43.3, lon: -11.4, side: 'left' },
+    { name: '哥白尼环形山', en: 'Copernicus', lat: 9.6, lon: -20.1, side: 'left' },
+    { name: '阿波罗 11 号着陆点', en: 'Apollo 11 · Tranquility Base', lat: 0.67, lon: 23.47 },
+    { name: '南极-艾特肯盆地', en: 'South Pole–Aitken', lat: -53.0, lon: -169.0 }
+  ];
+
+  var labelLayer = document.getElementById('labels');
+  var poiItems = [];
+
+  function latLonToVec(lat, lon, r) {
+    var la = lat * Math.PI / 180;
+    var lo = lon * Math.PI / 180;
+    return new THREE.Vector3(
+      Math.cos(la) * Math.cos(lo),
+      Math.sin(la),
+      -Math.cos(la) * Math.sin(lo)
+    ).multiplyScalar(r || 1);
+  }
+
+  function buildLabels() {
+    for (var i = 0; i < POIS.length; i++) {
+      var p = POIS[i];
+      var el = document.createElement('div');
+      el.className = 'poi';
+      var nm = document.createElement('span');
+      nm.className = 'poi-name' + (p.side === 'left' ? ' left' : '');
+      var b = document.createElement('b');
+      b.textContent = p.name;
+      var em = document.createElement('em');
+      em.textContent = p.en;
+      nm.appendChild(b);
+      nm.appendChild(em);
+      var dot = document.createElement('span');
+      dot.className = 'poi-dot';
+      el.appendChild(dot);
+      el.appendChild(nm);
+      labelLayer.appendChild(el);
+      poiItems.push({
+        el: el,
+        nameEl: nm,
+        vec: latLonToVec(p.lat, p.lon, 1.004),
+        baseSide: p.side === 'left' ? 'left' : 'right',
+        side: p.side === 'left' ? 'left' : 'right'
+      });
+    }
+  }
+
+  var _v = new THREE.Vector3();
+  var _n = new THREE.Vector3();
+  var _c = new THREE.Vector3();
+
+  function updateLabels() {
+    if (!poiItems.length) return;
+    if (!S.labels) {
+      for (var k = 0; k < poiItems.length; k++) poiItems[k].el.style.opacity = '0';
+      return;
+    }
+    spinGroup.updateMatrixWorld();
+    var w = window.innerWidth, h = window.innerHeight;
+
+    for (var i = 0; i < poiItems.length; i++) {
+      var it = poiItems[i];
+      _v.copy(it.vec);
+      spinGroup.localToWorld(_v);
+
+      _n.copy(_v).normalize();
+      _c.copy(camera.position).sub(_v).normalize();
+      var facing = _n.dot(_c);
+
+      if (facing < 0.04) {
+        it.el.style.opacity = '0';
+        continue;
+      }
+
+      var ndc = _v.clone().project(camera);
+      var x = (ndc.x * 0.5 + 0.5) * w;
+      var y = (-ndc.y * 0.5 + 0.5) * h;
+
+      // 靠近屏幕边缘时翻转标签方向，避免被裁切
+      var side = it.baseSide;
+      if (x > w - 112) side = 'left';
+      else if (x < 112) side = 'right';
+      if (side !== it.side) {
+        it.side = side;
+        it.nameEl.classList.toggle('left', side === 'left');
+      }
+
+      var alpha = Math.min(1, (facing - 0.04) / 0.20);
+      alpha = alpha * alpha * (3 - 2 * alpha);
+
+      it.el.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0)';
+      it.el.style.opacity = alpha.toFixed(3);
+      it.nameEl.style.opacity = alpha.toFixed(3);
+    }
+  }
+
+  /* ============================ 交互 ============================ */
+  var pointers = new Map();
+  var pinchStart = 0;
+  var lastMove = { dx: 0, t: 0 };
+  var introT = 0;
+
+  function clamp(v, a, b) { return v < a ? a : (v > b ? b : v); }
+
+  function onPointerDown(e) {
+    canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    canvas.classList.add('dragging');
+    S.spinVel = 0; S.pitchVel = 0;
+    if (pointers.size === 2) {
+      var it = pointers.values();
+      var a = it.next().value, b = it.next().value;
+      pinchStart = Math.hypot(a.x - b.x, a.y - b.y);
+    }
+    hideHint();
+  }
+
+  function onPointerMove(e) {
+    var p = pointers.get(e.pointerId);
+    if (!p) return;
+    var dx = e.clientX - p.x;
+    var dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+
+    if (pointers.size === 1) {
+      S.targetSpin += dx * CFG.dragSens;
+      S.targetPitch = clamp(S.targetPitch + dy * CFG.dragSens, -CFG.pitchMax, CFG.pitchMax);
+      lastMove.dx = dx;
+      lastMove.t = performance.now();
+    } else if (pointers.size === 2) {
+      var it = pointers.values();
+      var a = it.next().value, b = it.next().value;
+      var d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinchStart > 0) {
+        S.targetDist = clamp(S.targetDist * (pinchStart / d), CFG.camMin, CFG.camMax);
+      }
+      pinchStart = d;
+    }
+  }
+
+  function onPointerUp(e) {
+    pointers.delete(e.pointerId);
+    if (pointers.size === 0) {
+      canvas.classList.remove('dragging');
+      if (performance.now() - lastMove.t < 90) {
+        S.spinVel = lastMove.dx * CFG.dragSens * 60 * 0.55;
+        S.spinVel = clamp(S.spinVel, -2.6, 2.6);
+      }
+      pinchStart = 0;
+    } else {
+      pinchStart = 0;
+    }
+  }
+
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerUp);
+  canvas.addEventListener('pointerleave', function (e) {
+    if (pointers.has(e.pointerId)) onPointerUp(e);
+  });
+
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    S.targetDist = clamp(S.targetDist * Math.exp(e.deltaY * 0.0011), CFG.camMin, CFG.camMax);
+    hideHint();
+  }, { passive: false });
+
+  canvas.addEventListener('dblclick', function () { resetView(); });
+
+  function nearestAngle(base, cur) {
+    return base + Math.round((cur - base) / (Math.PI * 2)) * Math.PI * 2;
+  }
+
+  function resetView() {
+    S.targetSpin = nearestAngle(CFG.startSpin, S.spin);
+    S.targetPitch = CFG.lat0Pitch;
+    S.targetDist = CFG.camDefault;
+    S.spinVel = 0;
+    S.pitchVel = 0;
+  }
+
+  var hintEl = document.querySelector('.hint');
+  var hintHidden = false;
+  function hideHint() {
+    if (hintHidden) return;
+    hintHidden = true;
+    hintEl.style.transition = 'opacity .6s ease';
+    hintEl.style.opacity = '0';
+  }
+
+  /* 控制面板 */
+  var btnSpin = document.getElementById('btnSpin');
+  var btnLabels = document.getElementById('btnLabels');
+  var btnStars = document.getElementById('btnStars');
+  var btnReset = document.getElementById('btnReset');
+  var btnFull = document.getElementById('btnFull');
+  var fullLabel = document.getElementById('fullLabel');
+  var sunRange = document.getElementById('sunRange');
+  var sunValue = document.getElementById('sunValue');
+
+  function bindToggle(btn, key, onChange) {
+    btn.addEventListener('click', function () {
+      S[key] = !S[key];
+      btn.classList.toggle('on', S[key]);
+      if (onChange) onChange(S[key]);
+    });
+  }
+
+  bindToggle(btnSpin, 'autoSpin');
+  bindToggle(btnLabels, 'labels', function (on) {
+    if (!on) {
+      for (var i = 0; i < poiItems.length; i++) poiItems[i].el.style.opacity = '0';
+    }
+  });
+  bindToggle(btnStars, 'stars', function (on) {
+    stars.visible = on;
+    galaxy.visible = on;
+  });
+
+  btnReset.addEventListener('click', resetView);
+
+  btnFull.addEventListener('click', function () {
+    var doc = document;
+    if (!doc.fullscreenElement) {
+      (doc.documentElement.requestFullscreen || function () {})
+        .call(doc.documentElement).catch(function () {});
+    } else {
+      doc.exitFullscreen && doc.exitFullscreen();
+    }
+  });
+  document.addEventListener('fullscreenchange', function () {
+    fullLabel.textContent = document.fullscreenElement ? '退出' : '全屏';
+  });
+
+  sunRange.addEventListener('input', function () {
+    sunAz = parseFloat(sunRange.value);
+    sunValue.textContent = Math.round(sunAz) + '°';
+    updateSun();
+  });
+
+  /* 键盘 */
+  window.addEventListener('keydown', function (e) {
+    var k = e.key.toLowerCase();
+    if (k === 'r') resetView();
+    else if (k === 'f') btnFull.click();
+    else if (k === 'l') btnLabels.click();
+    else if (k === ' ') { e.preventDefault(); btnSpin.click(); }
+  });
+
+  /* 通过地址栏参数固定视角，例如 #spin=180&pitch=20&dist=2.2&sun=90 */
+  (function readViewHash() {
+    var h = (location.hash || '').replace(/^#/, '');
+    if (!h) return;
+    var parts = h.split('&');
+    var changed = false;
+    for (var i = 0; i < parts.length; i++) {
+      var kv = parts[i].split('=');
+      var k = kv[0], val = parseFloat(kv[1]);
+      if (isNaN(val)) continue;
+      if (k === 'spin') { S.spin = S.targetSpin = val * Math.PI / 180; changed = true; }
+      else if (k === 'pitch') { S.pitch = S.targetPitch = val * Math.PI / 180; changed = true; }
+      else if (k === 'dist') { S.dist = S.targetDist = Math.max(CFG.camMin, Math.min(CFG.camMax, val)); changed = true; }
+      else if (k === 'sun') { sunAz = val; updateSun(); changed = true; }
+    }
+    if (changed) {
+      S.autoSpin = false;
+      btnSpin.classList.remove('on');
+    }
+  })();
+
+  /* ============================ 主循环 ============================ */
+  var clock = new THREE.Clock(false);
+  var glowEl = document.getElementById('glow');
+
+  // 调试入口（也方便在控制台里微调）
+  window.__moon = { state: S, cfg: CFG };
+
+  function damp(cur, target, lambda, dt) {
+    return cur + (target - cur) * (1 - Math.exp(-lambda * dt));
+  }
+
+  function tick() {
+    requestAnimationFrame(tick);
+    var dt = Math.min(clock.getDelta(), 0.05);
+    S.time += dt;
+
+    // 自动自转
+    if (S.autoSpin) S.targetSpin += CFG.autoSpin * dt;
+
+    // 松手惯性
+    if (Math.abs(S.spinVel) > 0.0005) {
+      S.targetSpin += S.spinVel * dt;
+      S.spinVel *= Math.exp(-3.4 * dt);
+    }
+
+    S.spin = damp(S.spin, S.targetSpin, 9, dt);
+    S.pitch = damp(S.pitch, S.targetPitch, 9, dt);
+    S.dist = damp(S.dist, S.targetDist, 7, dt);
+
+    spinGroup.rotation.y = S.spin;
+    tiltGroup.rotation.x = S.pitch;
+    camera.position.set(0, 0, S.dist);
+    camera.lookAt(0, 0, 0);
+
+    // 月球在屏幕上的半径（相机固定沿 +Z 看向原点）
+    var rPix = (window.innerHeight * 0.5) / (S.dist * Math.tan(camera.fov * Math.PI / 360));
+    var gs = Math.round(rPix * 2.9) + 'px';
+    if (glowEl.style.width !== gs) {
+      glowEl.style.width = gs;
+      glowEl.style.height = gs;
+    }
+
+    if (starMat) {
+      starMat.uniforms.uTime.value = S.time;
+      starMat.uniforms.uPixelRatio.value = targetPixelRatio();
+    }
+
+    if (S.ready) updateLabels();
+    renderer.render(scene, camera);
+  }
+
+  /* ============================ 尺寸 ============================ */
+  function onResize() {
+    var w = window.innerWidth, h = window.innerHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setPixelRatio(targetPixelRatio());
+    renderer.setSize(w, h, false);
+  }
+  window.addEventListener('resize', onResize);
+
+  window.addEventListener('visibilitychange', function () {
+    if (!document.hidden) clock.getDelta();
+  });
+
+  function fail(msg) {
+    var el = document.querySelector('.loader-text');
+    if (el) el.textContent = msg;
+    var ring = document.querySelector('.loader-ring');
+    if (ring) ring.style.animation = 'none';
+    console.error(msg);
+  }
+
+  // 预加载提示（贴图内嵌，通常瞬间完成）
+  setTimeout(function () {
+    if (!S.ready) loadBar.style.width = '55%';
+  }, 120);
+})();
+</script>
+</body>
+</html>
