@@ -412,7 +412,7 @@ function boot() {
   });
 
   /* ══════════ 星球构建 ══════════ */
-  let earth, cloud, atmo, moon, moonMat, orbitLine = null;
+  let earth, cloud, moon, moonMat, orbitLine = null;
   let earthGroup, moonGroup;
 
   const vsMain = [
@@ -452,10 +452,7 @@ function boot() {
     "  float nh = max(dot(N, H), 0.0);",
     "  float glint = pow(nh, 900.0) * 1.05 + pow(nh, 70.0) * 0.055;",
     "  lit += vec3(1.0, 0.95, 0.84) * glint * ocean * smoothstep(0.0, 0.09, ndl);",
-    "  float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 4.0);",
-    "  lit += vec3(0.22, 0.46, 0.92) * fres * 0.40 * smoothstep(-0.35, 0.45, ndl);",
     "  vec3 night = vec3(0.010, 0.017, 0.038) + nightC.r * vec3(1.0, 0.86, 0.62) * 2.05 * uNightMix;",
-    "  night += vec3(0.040, 0.075, 0.150) * fres * 0.50;",
     "  vec3 col = mix(night, lit, dayAmt);",
     "  gl_FragColor = vec4(col, 1.0);",
     "}"
@@ -479,22 +476,6 @@ function boot() {
     "  float term = clamp(1.0 - abs(ndl) * 3.4, 0.0, 1.0);",
     "  c = mix(c, vec3(1.0, 0.70, 0.48), term * 0.42);",
     "  gl_FragColor = vec4(c, d * uOpacity);",
-    "}"
-  ].join("\n");
-
-  const fsAtmo = [
-    "varying vec3 vN;",
-    "varying vec3 vW;",
-    "uniform vec3 uSun, uColor;",
-    "uniform float uStrength, uPower;",
-    "void main(){",
-    "  vec3 N = normalize(vN);",
-    "  vec3 V = normalize(cameraPosition - vW);",
-    "  vec3 L = normalize(uSun);",
-    "  float rim = pow(1.0 - abs(dot(N, V)), uPower);",
-    "  float sun = max(dot(N, L), 0.0);",
-    "  float glow = rim * (0.10 + 0.90 * pow(sun, 0.75));",
-    "  gl_FragColor = vec4(uColor * glow * uStrength, glow);",
     "}"
   ].join("\n");
 
@@ -538,24 +519,6 @@ function boot() {
     cloud = new THREE.Mesh(new THREE.SphereGeometry(R_E * 1.006, 128, 64), cloudMat);
     cloud.rotation.y = state.cloudRot;
     earthGroup.add(cloud);
-
-    /* ---- 大气 ---- */
-    const atmoMat = new THREE.ShaderMaterial({
-      uniforms: {
-        uSun: { value: sunDir },
-        uColor: { value: new THREE.Color(0.30, 0.58, 1.0) },
-        uStrength: { value: 1.02 },
-        uPower: { value: 3.0 }
-      },
-      vertexShader: vsMain,
-      fragmentShader: fsAtmo,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      side: THREE.BackSide
-    });
-    atmo = new THREE.Mesh(new THREE.SphereGeometry(R_E * 1.045, 96, 48), atmoMat);
-    earthGroup.add(atmo);
 
     /* ---- 月球 ---- */
     moonGroup = new THREE.Group();
