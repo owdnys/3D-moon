@@ -215,7 +215,7 @@
     <svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><circle cx="18" cy="17" r="1.1"/><circle cx="5.5" cy="16.5" r=".9"/></svg>
     <span class="lbl">星空</span><span class="dot"></span>
   </button>
-  <button class="btn" id="b-phase" title="切换太阳方位（月相 / 昼夜）">
+  <button class="btn" id="b-phase" title="切换月球月相">
     <svg viewBox="0 0 24 24"><path d="M20.2 13.4A8.3 8.3 0 0 1 10.6 3.8a8.5 8.5 0 1 0 9.6 9.6z"/></svg>
     <span class="lbl">月相</span>
   </button>
@@ -353,6 +353,7 @@ function boot() {
   const camera = new THREE.PerspectiveCamera(FOV, window.innerWidth / window.innerHeight, CAM_NEAR, CAM_FAR);
 
   /* ---------- 太阳 ---------- */
+  // 月球：太阳方位随「月相」按钮变化
   const sunDir = new THREE.Vector3(0, 0, 1);
   function updateSun() {
     const az = state.sunAz, el = state.sunEl;
@@ -363,6 +364,16 @@ function boot() {
     ).normalize();
   }
   updateSun();
+
+  // 地球：固定的受光方向（正面受光、略带立体），不随月相按钮变化
+  const earthSunDir = (function () {
+    const az = 18 * Math.PI / 180, el = 10 * Math.PI / 180;
+    return new THREE.Vector3(
+      Math.cos(el) * Math.sin(az),
+      Math.sin(el),
+      Math.cos(el) * Math.cos(az)
+    ).normalize();
+  })();
 
   /* ---------- 纹理 ---------- */
   let done = 0;
@@ -482,7 +493,7 @@ function boot() {
   const earthUniforms = {
     uDay: { value: null }, uNight: { value: null },
     uSpec: { value: null }, uCloud: { value: null },
-    uSun: { value: sunDir },
+    uSun: { value: earthSunDir },
     uNightMix: { value: 1.0 },
     uCloudShadow: { value: 0.32 },
     uCloudShift: { value: 0.0 }
@@ -510,7 +521,7 @@ function boot() {
 
     /* ---- 云层 ---- */
     const cloudMat = new THREE.ShaderMaterial({
-      uniforms: { uCloud: { value: cloudTex }, uSun: { value: sunDir }, uOpacity: { value: 0.92 } },
+      uniforms: { uCloud: { value: cloudTex }, uSun: { value: earthSunDir }, uOpacity: { value: 0.92 } },
       vertexShader: vsMain,
       fragmentShader: fsCloud,
       transparent: true,
@@ -940,7 +951,7 @@ function boot() {
     state.sunAz = deg * Math.PI / 180;
     updateSun();
     if (window.__placeLights) window.__placeLights();
-    flashHint("太阳方位 " + deg + "° · " + phaseName(deg));
+    flashHint("月球月相 " + deg + "° · " + phaseName(deg));
   });
 
   $("b-reset").addEventListener("click", resetView);
